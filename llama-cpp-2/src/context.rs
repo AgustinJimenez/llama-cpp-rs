@@ -367,6 +367,14 @@ impl<'model> LlamaContext<'model> {
     pub fn print_memory_breakdown(&self) {
         unsafe { llama_cpp_sys_2::llama_memory_breakdown_print(self.context.as_ptr()) }
     }
+
+    /// Clear the KV cache memory (reset all stored tokens).
+    pub fn clear_memory(&mut self) {
+        unsafe {
+            let mem = llama_cpp_sys_2::llama_get_memory(self.context.as_ptr());
+            llama_cpp_sys_2::llama_memory_clear(mem, true);
+        }
+    }
 }
 
 impl Drop for LlamaContext<'_> {
