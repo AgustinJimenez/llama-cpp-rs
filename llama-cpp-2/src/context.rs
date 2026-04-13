@@ -363,6 +363,24 @@ impl<'model> LlamaContext<'model> {
         Ok(())
     }
 
+    /// Set an abort callback that is checked during `llama_decode`.
+    ///
+    /// If the callback returns `true`, the ongoing decode operation will be
+    /// aborted early. Pass `None` to clear the callback.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `data` outlives the context and any
+    /// concurrent decode calls. Using a `Box::into_raw`'d `Arc<AtomicBool>`
+    /// that is later reclaimed is the recommended pattern.
+    pub unsafe fn set_abort_callback(
+        &mut self,
+        callback: llama_cpp_sys_2::ggml_abort_callback,
+        data: *mut std::ffi::c_void,
+    ) {
+        llama_cpp_sys_2::llama_set_abort_callback(self.context.as_ptr(), callback, data);
+    }
+
     /// Print a breakdown of per-device memory use to the default logger.
     pub fn print_memory_breakdown(&self) {
         unsafe { llama_cpp_sys_2::llama_memory_breakdown_print(self.context.as_ptr()) }

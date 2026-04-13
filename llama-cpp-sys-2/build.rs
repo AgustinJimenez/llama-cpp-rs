@@ -616,10 +616,16 @@ fn main() {
         }
     }
 
+    let dynamic_backends = cfg!(feature = "dynamic-backends");
+
     config.define(
         "BUILD_SHARED_LIBS",
         if build_shared_libs { "ON" } else { "OFF" },
     );
+
+    if dynamic_backends {
+        config.define("GGML_BACKEND_DL", "ON");
+    }
 
     if matches!(target_os, TargetOs::Apple(_)) {
         config.define("GGML_BLAS", "OFF");
@@ -758,35 +764,33 @@ fn main() {
 
     if cfg!(feature = "vulkan") {
         config.define("GGML_VULKAN", "ON");
-        match target_os {
-            TargetOs::Windows(_) => {
-                let vulkan_path = env::var("VULKAN_SDK").expect(
-                    "Please install Vulkan SDK and ensure that VULKAN_SDK env variable is set",
-                );
-                let vulkan_lib_path = Path::new(&vulkan_path).join("Lib");
-                println!("cargo:rustc-link-search={}", vulkan_lib_path.display());
-                println!("cargo:rustc-link-lib=vulkan-1");
-
-                // workaround for this error: "FileTracker : error FTK1011: could not create the new file tracking log file"
-                // it has to do with MSBuild FileTracker not respecting the path
-                // limit configuration set in the windows registry.
-                // I'm not sure why that's a thing, but this makes my builds work.
-                // (crates that depend on llama-cpp-rs w/ vulkan easily exceed the default PATH_MAX on windows)
-                env::set_var("TrackFileAccess", "false");
-                // since we disabled TrackFileAccess, we can now run into problems with parallel
-                // access to pdb files. /FS solves this.
-                config.cflag("/FS");
-                config.cxxflag("/FS");
-            }
-            TargetOs::Linux => {
-                // If we are not using system provided vulkan SDK, add vulkan libs for linking
-                if let Ok(vulkan_path) = env::var("VULKAN_SDK") {
-                    let vulkan_lib_path = Path::new(&vulkan_path).join("lib");
+        if !dynamic_backends {
+            match target_os {
+                TargetOs::Windows(_) => {
+                    let vulkan_path = env::var("VULKAN_SDK").expect(
+                        "Please install Vulkan SDK and ensure that VULKAN_SDK env variable is set",
+                    );
+                    let vulkan_lib_path = Path::new(&vulkan_path).join("Lib");
                     println!("cargo:rustc-link-search={}", vulkan_lib_path.display());
+                    println!("cargo:rustc-link-lib=vulkan-1");
+
+                    env::set_var("TrackFileAccess", "false");
+                    config.cflag("/FS");
+                    config.cxxflag("/FS");
                 }
-                println!("cargo:rustc-link-lib=vulkan");
+                TargetOs::Linux => {
+                    if let Ok(vulkan_path) = env::var("VULKAN_SDK") {
+                        let vulkan_lib_path = Path::new(&vulkan_path).join("lib");
+                        println!("cargo:rustc-link-search={}", vulkan_lib_path.display());
+                    }
+                    println!("cargo:rustc-link-lib=vulkan");
+                }
+                _ => (),
             }
-            _ => (),
+        } else if matches!(target_os, TargetOs::Windows(_)) {
+            env::set_var("TrackFileAccess", "false");
+            config.cflag("/FS");
+            config.cxxflag("/FS");
         }
     }
 
@@ -905,7 +909,7 @@ fn main() {
         }
     }
 
-    if cfg!(feature = "cuda") && !build_shared_libs {
+    if cfg!(feature = "cuda") && !build_shared_libs && !dynamic_backends {
         // Re-run build script if CUDA_PATH environment variable changes
         println!("cargo:rerun-if-env-changed=CUDA_PATH");
 
@@ -946,7 +950,7 @@ fn main() {
         }
     }
 
-    if cfg!(feature = "rocm") && !build_shared_libs {
+    if cfg!(feature = "rocm") && !build_shared_libs && !dynamic_backends {
         // Re-run build script if ROCM_PATH environment variable changes
         println!("cargo:rerun-if-env-changed=ROCM_PATH");
         println!("cargo:rerun-if-env-changed=HIP_PATH");
@@ -987,6 +991,15 @@ fn main() {
         "static"
     };
     let mut llama_libs = extract_lib_names(&out_dir, build_shared_libs);
+
+    if dynamic_backends {
+        llama_libs.retain(|lib| {
+            !lib.starts_with("ggml-cuda")
+                && !lib.starts_with("ggml-vulkan")
+                && !lib.starts_with("ggml-hip")
+                && !lib.starts_with("ggml-rocm")
+        });
+    }
 
     assert_ne!(llama_libs.len(), 0);
 
@@ -1075,7 +1088,23 @@ fn main() {
 
     // copy DLLs to target
     if build_shared_libs {
-        let libs_assets = extract_lib_assets(&out_dir);
+        let mut libs_assets = extract_lib_assets(&out_dir);
+        // Also scan cmake build output for backend DLLs (GGML_BACKEND_DL builds them
+        // separately and cmake install doesn't copy them)
+        if dynamic_backends {
+            let build_bin = out_dir.join("build").join("bin").join(&profile);
+            if build_bin.is_dir() {
+                let pattern = if cfg!(windows) { "*.dll" } else if cfg!(target_os = "macos") { "*.dylib" } else { "*.so" };
+                for entry in glob(build_bin.join(pattern).to_str().unwrap()).unwrap() {
+                    if let Ok(path) = entry {
+                        if !libs_assets.iter().any(|p| p.file_name() == path.file_name()) {
+                            debug_log!("Found backend DLL in build dir: {}", path.display());
+                            libs_assets.push(path);
+                        }
+                    }
+                }
+            }
+        }
         for asset in libs_assets {
             let asset_clone = asset.clone();
             let filename = asset_clone.file_name().unwrap();
@@ -1083,7 +1112,9 @@ fn main() {
             let dst = target_dir.join(filename);
             debug_log!("HARD LINK {} TO {}", asset.display(), dst.display());
             if !dst.exists() {
-                std::fs::hard_link(asset.clone(), dst).unwrap();
+                std::fs::hard_link(asset.clone(), &dst)
+                    .or_else(|_| std::fs::copy(asset.clone(), &dst).map(|_| ()))
+                    .unwrap();
             }
 
             // Copy DLLs to examples as well
@@ -1091,7 +1122,9 @@ fn main() {
                 let dst = target_dir.join("examples").join(filename);
                 debug_log!("HARD LINK {} TO {}", asset.display(), dst.display());
                 if !dst.exists() {
-                    std::fs::hard_link(asset.clone(), dst).unwrap();
+                    std::fs::hard_link(asset.clone(), &dst)
+                    .or_else(|_| std::fs::copy(asset.clone(), &dst).map(|_| ()))
+                    .unwrap();
                 }
             }
 
@@ -1099,7 +1132,9 @@ fn main() {
             let dst = target_dir.join("deps").join(filename);
             debug_log!("HARD LINK {} TO {}", asset.display(), dst.display());
             if !dst.exists() {
-                std::fs::hard_link(asset.clone(), dst).unwrap();
+                std::fs::hard_link(asset.clone(), &dst)
+                    .or_else(|_| std::fs::copy(asset.clone(), &dst).map(|_| ()))
+                    .unwrap();
             }
         }
     }

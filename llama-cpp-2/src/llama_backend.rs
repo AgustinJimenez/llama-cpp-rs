@@ -85,6 +85,16 @@ impl LlamaBackend {
         unsafe { llama_cpp_sys_2::llama_supports_mlock() }
     }
 
+    /// Load all known backends from dynamic libraries (GGML_BACKEND_DL).
+    pub fn load_all_backends(&self) {
+        unsafe { llama_cpp_sys_2::ggml_backend_load_all() }
+    }
+
+    /// Load all known backends from dynamic libraries in a specific directory.
+    pub fn load_all_backends_from_path(&self, dir_path: &std::ffi::CStr) {
+        unsafe { llama_cpp_sys_2::ggml_backend_load_all_from_path(dir_path.as_ptr()) }
+    }
+
     /// Change the output of llama.cpp's logging to be voided instead of pushed to `stderr`.
     pub fn void_logs(&mut self) {
         unsafe extern "C" fn void_log(
