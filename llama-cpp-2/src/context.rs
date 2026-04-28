@@ -93,6 +93,13 @@ impl<'model> LlamaContext<'model> {
         }
     }
 
+    /// Wait until all async CUDA/backend operations are finished.
+    /// Call this after decode() and before sample() to prevent race conditions
+    /// with async tensor copies (see llama.cpp issue #18310).
+    pub fn synchronize(&mut self) {
+        unsafe { llama_cpp_sys_2::llama_synchronize(self.context.as_ptr()) };
+    }
+
     /// Encodes the batch.
     ///
     /// # Errors
