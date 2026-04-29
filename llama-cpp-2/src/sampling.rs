@@ -23,13 +23,34 @@ impl Debug for LlamaSampler {
 }
 
 impl LlamaSampler {
-    /// Sample and accept a token from the idx-th output of the last evaluation
+    /// Sample and accept a token from the idx-th output of the last evaluation.
+    /// Uses a safe C++ wrapper that catches exceptions instead of crashing.
     #[must_use]
     pub fn sample(&mut self, ctx: &LlamaContext, idx: i32) -> LlamaToken {
+        extern "C" {
+            fn llama_sampler_sample_safe(
+                smpl: *mut llama_cpp_sys_2::llama_sampler,
+                ctx: *mut llama_cpp_sys_2::llama_context,
+                idx: i32,
+            ) -> llama_cpp_sys_2::llama_token;
+            fn llama_decode_safe_get_error() -> *const std::ffi::c_char;
+        }
         let token = unsafe {
-            llama_cpp_sys_2::llama_sampler_sample(self.sampler, ctx.context.as_ptr(), idx)
+            llama_sampler_sample_safe(self.sampler, ctx.context.as_ptr(), idx)
         };
-
+        // Check if the safe wrapper caught a C++ exception (token == -1 + error set)
+        if token == -1 {
+            let err = unsafe {
+                let ptr = llama_decode_safe_get_error();
+                if !ptr.is_null() {
+                    let s = std::ffi::CStr::from_ptr(ptr).to_string_lossy();
+                    if !s.is_empty() { Some(s.to_string()) } else { None }
+                } else { None }
+            };
+            if let Some(msg) = err {
+                eprintln!("[SAMPLE] C++ exception caught in sample(): {}", msg);
+            }
+        }
         LlamaToken(token)
     }
 
