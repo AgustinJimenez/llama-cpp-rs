@@ -496,6 +496,7 @@ fn main() {
         .cpp(true)
         .file("wrapper_common.cpp")
         .file("wrapper_oai.cpp")
+        .file("safe_wrapper.cpp")
         .include(&llama_src)
         .include(llama_src.join("common"))
         .include(llama_src.join("include"))

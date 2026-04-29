@@ -80,8 +80,27 @@ impl<'model> LlamaContext<'model> {
     ///
     /// - the returned [`std::ffi::c_int`] from llama-cpp does not fit into a i32 (this should never happen on most systems)
     pub fn decode(&mut self, batch: &mut LlamaBatch) -> Result<(), DecodeError> {
-        let result =
-            unsafe { llama_cpp_sys_2::llama_decode(self.context.as_ptr(), batch.llama_batch) };
+        // Use safe wrapper that catches C++ exceptions (0xE06D7363 on MSVC).
+        // Direct llama_decode can throw, which propagates through FFI and crashes.
+        extern "C" {
+            fn llama_decode_safe(ctx: *mut llama_cpp_sys_2::llama_context, batch: llama_cpp_sys_2::llama_batch) -> i32;
+            fn llama_decode_safe_get_error() -> *const std::ffi::c_char;
+        }
+        let result = unsafe { llama_decode_safe(self.context.as_ptr(), batch.llama_batch) };
+
+        if result == -99 {
+            // C++ exception caught by wrapper
+            let err_msg = unsafe {
+                let ptr = llama_decode_safe_get_error();
+                if ptr.is_null() {
+                    "unknown C++ exception".to_string()
+                } else {
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().to_string()
+                }
+            };
+            eprintln!("[DECODE] C++ exception caught: {}", err_msg);
+            return Err(DecodeError::from(std::num::NonZeroI32::new(-1).unwrap()));
+        }
 
         match NonZeroI32::new(result) {
             None => {
