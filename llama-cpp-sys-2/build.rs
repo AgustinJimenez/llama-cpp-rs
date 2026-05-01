@@ -251,13 +251,10 @@ fn main() {
         }
     }
 
-    // Speed up build
+    // Limit parallel build to reduce CPU usage during CUDA compilation
     env::set_var(
         "CMAKE_BUILD_PARALLEL_LEVEL",
-        std::thread::available_parallelism()
-            .unwrap()
-            .get()
-            .to_string(),
+        env::var("LLAMA_BUILD_JOBS").unwrap_or_else(|_| "3".to_string()),
     );
 
     // Bindings
@@ -530,6 +527,10 @@ fn main() {
     config.define("LLAMA_BUILD_TOOLS", "OFF");
     config.define("LLAMA_BUILD_COMMON", "ON");
     config.define("LLAMA_CURL", "OFF");
+    // Disable CUDA graphs — they cause intermittent sync deadlocks
+    // where ggml_backend_sched_synchronize() hangs forever.
+    // See: https://github.com/ggml-org/llama.cpp/issues/20545
+    config.define("GGML_CUDA_GRAPHS", "OFF");
 
     // Pass CMAKE_ environment variables down to CMake
     for (key, value) in env::vars() {
