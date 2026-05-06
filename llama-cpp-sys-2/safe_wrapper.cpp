@@ -32,8 +32,14 @@ int32_t llama_decode_safe(struct llama_context * ctx, struct llama_batch batch) 
 // timeout_ms, returns LLAMA_TOKEN_NULL and sets error message.
 // The hung thread is abandoned (detached) — it will eventually be
 // cleaned up when the process exits or the CUDA operation completes.
+static std::atomic<int> _timed_sample_calls{0};
+
 llama_token llama_sampler_sample_safe(struct llama_sampler * smpl, struct llama_context * ctx, int32_t idx) {
     g_last_error[0] = '\0';
+    int call_num = ++_timed_sample_calls;
+    if (call_num == 1) {
+        fprintf(stderr, "[SAMPLE_SAFE] Timed sample wrapper ACTIVE (8s timeout per call)\n");
+    }
 
     std::atomic<bool> done{false};
     std::atomic<llama_token> result{-1};

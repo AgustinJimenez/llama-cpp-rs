@@ -19,8 +19,8 @@ struct llama_rs_chat_template_result {
     char * prompt;
     char * grammar;
     char * parser;
+    char * generation_prompt;
     int chat_format;
-    // PATCHED: thinking_forced_open removed (no longer in upstream API)
     bool grammar_lazy;
     struct llama_rs_grammar_trigger * grammar_triggers;
     size_t grammar_triggers_count;

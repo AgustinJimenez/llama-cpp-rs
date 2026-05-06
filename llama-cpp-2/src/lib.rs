@@ -8,6 +8,7 @@
 //! # Examples
 //!
 //! - [simple](https://github.com/utilityai/llama-cpp-rs/tree/main/examples/simple)
+//! - [tools](https://github.com/utilityai/llama-cpp-rs/tree/main/examples/tools)
 //!
 //! # Feature Flags
 //!
@@ -42,10 +43,6 @@ pub use crate::context::session::LlamaStateSeqFlags;
 
 pub(crate) fn status_is_ok(status: llama_cpp_sys_2::llama_rs_status) -> bool {
     status == llama_cpp_sys_2::LLAMA_RS_STATUS_OK
-}
-
-pub(crate) fn status_to_i32(status: llama_cpp_sys_2::llama_rs_status) -> i32 {
-    status as i32
 }
 
 /// A failable result from a llama.cpp function.
@@ -89,6 +86,9 @@ pub enum LlamaCppError {
     /// Failed to convert JSON schema to grammar.
     #[error("JsonSchemaToGrammarError: {0}")]
     JsonSchemaToGrammarError(String),
+    /// There was an error fitting model parameters to available memory.
+    #[error("{0}")]
+    FitError(#[from] crate::model::params::FitError),
 }
 
 /// There was an error while getting the chat template from a model.
@@ -319,7 +319,7 @@ pub fn json_schema_to_grammar(schema_json: &str) -> Result<String> {
         if !status_is_ok(rc) || out.is_null() {
             return Err(LlamaCppError::JsonSchemaToGrammarError(format!(
                 "ffi error {}",
-                status_to_i32(rc)
+                rc
             )));
         }
         let grammar_bytes = unsafe { CStr::from_ptr(out) }.to_bytes().to_vec();
@@ -330,6 +330,28 @@ pub fn json_schema_to_grammar(schema_json: &str) -> Result<String> {
 
     unsafe { llama_cpp_sys_2::llama_rs_string_free(out) };
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::json_schema_to_grammar;
+
+    #[test]
+    fn json_schema_string_api_returns_grammar() {
+        let schema = r#"{
+            "type": "object",
+            "properties": {
+                "city": { "type": "string" },
+                "unit": { "enum": ["c", "f"] }
+            },
+            "required": ["city"]
+        }"#;
+
+        let grammar =
+            json_schema_to_grammar(schema).expect("string-based schema conversion should succeed");
+
+        assert!(grammar.contains("root ::="));
+    }
 }
 
 /// An error that can occur when converting a token to a string.
