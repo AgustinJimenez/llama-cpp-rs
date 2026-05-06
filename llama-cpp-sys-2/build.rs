@@ -1016,7 +1016,7 @@ fn main() {
         "static"
     };
 
-    let llama_libs = extract_lib_names(&out_dir, build_shared_libs, &target_os);
+    let mut llama_libs = extract_lib_names(&out_dir, build_shared_libs, &target_os);
 
     if dynamic_backends {
         llama_libs.retain(|lib| {

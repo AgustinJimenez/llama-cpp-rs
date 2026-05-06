@@ -15,6 +15,37 @@
 
 using json = nlohmann::ordered_json;
 
+// Inline helper — was removed from common/chat.cpp in upstream refactor (#20690)
+static json common_chat_msg_diff_to_json_oaicompat(const common_chat_msg_diff & diff) {
+    json delta = json::object();
+    if (!diff.reasoning_content_delta.empty()) {
+        delta["reasoning_content"] = diff.reasoning_content_delta;
+    }
+    if (!diff.content_delta.empty()) {
+        delta["content"] = diff.content_delta;
+    }
+    if (diff.tool_call_index != std::string::npos) {
+        json tool_call;
+        tool_call["index"] = diff.tool_call_index;
+        if (!diff.tool_call_delta.id.empty()) {
+            tool_call["id"]   = diff.tool_call_delta.id;
+            tool_call["type"] = "function";
+        }
+        if (!diff.tool_call_delta.name.empty() || !diff.tool_call_delta.arguments.empty()) {
+            json function = json::object();
+            if (!diff.tool_call_delta.name.empty()) {
+                function["name"] = diff.tool_call_delta.name;
+            }
+            if (!diff.tool_call_delta.arguments.empty()) {
+                function["arguments"] = diff.tool_call_delta.arguments;
+            }
+            tool_call["function"] = function;
+        }
+        delta["tool_calls"] = json::array({ tool_call });
+    }
+    return delta;
+}
+
 struct llama_rs_chat_parse_state_oaicompat {
     common_chat_parser_params syntax;
     common_chat_msg chat_msg;

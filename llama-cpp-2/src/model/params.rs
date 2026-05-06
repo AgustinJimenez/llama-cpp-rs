@@ -1,5 +1,6 @@
 //! A safe wrapper around `llama_model_params`.
 
+#[cfg(feature = "__fit_params")]
 use crate::context::params::LlamaContextParams;
 use crate::model::params::kv_overrides::KvOverrides;
 use crate::LlamaCppError;
@@ -11,6 +12,7 @@ use std::ptr::null;
 pub mod kv_overrides;
 
 /// Result of [`LlamaModelParams::fit_params`], containing the fitted context size.
+#[cfg(feature = "__fit_params")]
 #[derive(Debug, Clone)]
 pub struct FitResult {
     /// The context size after fitting (may have been reduced from the requested value).
@@ -18,6 +20,7 @@ pub struct FitResult {
 }
 
 /// Error returned by [`LlamaModelParams::fit_params`].
+#[cfg(feature = "__fit_params")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum FitError {
     /// Could not find allocations that are projected to fit available memory.
@@ -286,43 +289,12 @@ impl LlamaModelParams {
     }
 }
 
+// NOTE: fit_params requires llama_params_fit / LLAMA_PARAMS_FIT_STATUS_* symbols
+// which live in common/fit.h — not part of llama.h public API in newer llama.cpp.
+// Gated behind __fit_params feature until upstream stabilizes.
+#[cfg(feature = "__fit_params")]
 impl LlamaModelParams {
     /// Automatically fit model parameters to available device memory.
-    ///
-    /// Wraps llama.cpp's `llama_params_fit`, which determines optimal `n_gpu_layers`,
-    /// `tensor_split`, and `tensor_buft_overrides` based on available VRAM. On success
-    /// the model and context params are updated in place.
-    ///
-    /// # Requirements
-    ///
-    /// Per the C API docstring, only parameters that still hold their default value
-    /// are modified. In practice this means:
-    /// - `n_gpu_layers` must be at its default (`-1`). Do not call
-    ///   [`with_n_gpu_layers`](Self::with_n_gpu_layers) before this.
-    /// - No `tensor_buft_overrides` may be set. Do not call
-    ///   [`add_cpu_buft_override`](Self::add_cpu_buft_override) or
-    ///   [`add_cpu_moe_override`](Self::add_cpu_moe_override) before this.
-    /// - `cparams.n_ctx` is only auto-selected if it is `0`; otherwise it is left alone.
-    ///
-    /// # Arguments
-    ///
-    /// - `model_path` — path to the GGUF model file.
-    /// - `cparams` — context parameters; `n_ctx` may be modified (see above).
-    /// - `margins` — memory margin per device in bytes. Must have at least
-    ///   `llama_max_devices()` elements.
-    /// - `n_ctx_min` — minimum context size to preserve when reducing memory usage.
-    /// - `log_level` — minimum log level for fitting output; lower levels are routed
-    ///   to the debug log.
-    ///
-    /// # Thread safety
-    ///
-    /// This function is **not** thread safe: the underlying C call mutates the global
-    /// llama logger state.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`FitError::Failure`] if no fitting allocation could be found, or
-    /// [`FitError::Error`] on a hard error (e.g. the model file could not be read).
     pub fn fit_params(
         mut self: Pin<&mut Self>,
         model_path: &CStr,
@@ -334,11 +306,9 @@ impl LlamaModelParams {
         let max_devices = unsafe { llama_cpp_sys_2::llama_max_devices() };
         let max_buft = unsafe { llama_cpp_sys_2::llama_max_tensor_buft_overrides() };
 
-        // Allocate tensor_split output buffer.
         self.tensor_split.clear();
         self.tensor_split.resize(max_devices, 0.0);
 
-        // Reset and resize buft_overrides for fit output (null-terminated).
         self.buft_overrides.clear();
         self.buft_overrides.resize(
             max_buft + 1,
@@ -348,7 +318,6 @@ impl LlamaModelParams {
             },
         );
 
-        // Clear pointers before the call — fit writes directly into the buffers above.
         self.params.tensor_split = null::<f32>();
         self.params.tensor_buft_overrides = null();
 
@@ -371,7 +340,6 @@ impl LlamaModelParams {
             _ => return Err(FitError::Error),
         }
 
-        // Wire the owned buffers into the raw params.
         self.params.tensor_split = self.tensor_split.as_ptr();
         self.params.tensor_buft_overrides = self.buft_overrides.as_ptr();
 
