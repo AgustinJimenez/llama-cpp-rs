@@ -256,10 +256,13 @@ fn main() {
         }
     }
 
-    // Limit parallel build to reduce CPU usage during CUDA compilation
+    // Speed up build with parallel compilation
     env::set_var(
         "CMAKE_BUILD_PARALLEL_LEVEL",
-        env::var("LLAMA_BUILD_JOBS").unwrap_or_else(|_| "3".to_string()),
+        std::thread::available_parallelism()
+            .unwrap()
+            .get()
+            .to_string(),
     );
 
     // Bindings
@@ -535,6 +538,7 @@ fn main() {
     // Disable CUDA graphs — they cause intermittent sync deadlocks
     // where ggml_backend_sched_synchronize() hangs forever.
     // See: https://github.com/ggml-org/llama.cpp/issues/20545
+    // Disable CUDA graphs — they cause sync deadlocks after tool output injection on hybrid models
     config.define("GGML_CUDA_GRAPHS", "OFF");
 
     // Pass CMAKE_ environment variables down to CMake
@@ -1042,7 +1046,8 @@ fn main() {
                 common_profile_dir.display()
             );
         }
-        println!("cargo:rustc-link-lib=static=common");
+        // llama.cpp upstream renamed 'common' to 'llama-common'
+        // Must be linked AFTER llama (common depends on llama symbols)
     }
 
     if cfg!(feature = "system-ggml") {
@@ -1054,6 +1059,18 @@ fn main() {
         let link = format!("cargo:rustc-link-lib={}={}", llama_libs_kind, lib);
         debug_log!("LINK {link}",);
         println!("{link}",);
+    }
+
+    // Link llama-common AFTER llama (it depends on llama symbols like llama_build_number)
+    if out_dir.join("build").join("common").is_dir() {
+        // Check if llama-common-base exists (newer llama.cpp splits it)
+        let common_profile_dir = out_dir.join("build").join("common").join(&profile);
+        if common_profile_dir.join("llama-common-base.lib").exists()
+            || out_dir.join("lib").join("llama-common-base.lib").exists()
+        {
+            println!("cargo:rustc-link-lib=static=llama-common-base");
+        }
+        println!("cargo:rustc-link-lib=static=llama-common");
     }
 
     // OpenMP
