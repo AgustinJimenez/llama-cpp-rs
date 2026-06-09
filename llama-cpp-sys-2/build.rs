@@ -1,3 +1,5 @@
+#![allow(clippy::uninlined_format_args, clippy::manual_flatten)]
+
 use cmake::Config;
 use glob::glob;
 use std::env;
@@ -493,6 +495,7 @@ fn main() {
     println!("cargo:rerun-if-changed=wrapper_oai.cpp");
     println!("cargo:rerun-if-changed=wrapper_utils.h");
     println!("cargo:rerun-if-changed=wrapper_mtmd.h");
+    println!("cargo:rerun-if-changed=safe_wrapper.cpp");
 
     debug_log!("Bindings Created");
 
@@ -1137,10 +1140,19 @@ fn main() {
         if dynamic_backends {
             let build_bin = out_dir.join("build").join("bin").join(&profile);
             if build_bin.is_dir() {
-                let pattern = if cfg!(windows) { "*.dll" } else if cfg!(target_os = "macos") { "*.dylib" } else { "*.so" };
+                let pattern = if cfg!(windows) {
+                    "*.dll"
+                } else if cfg!(target_os = "macos") {
+                    "*.dylib"
+                } else {
+                    "*.so"
+                };
                 for entry in glob(build_bin.join(pattern).to_str().unwrap()).unwrap() {
                     if let Ok(path) = entry {
-                        if !libs_assets.iter().any(|p| p.file_name() == path.file_name()) {
+                        if !libs_assets
+                            .iter()
+                            .any(|p| p.file_name() == path.file_name())
+                        {
                             debug_log!("Found backend DLL in build dir: {}", path.display());
                             libs_assets.push(path);
                         }
@@ -1166,8 +1178,8 @@ fn main() {
                 debug_log!("HARD LINK {} TO {}", asset.display(), dst.display());
                 if !dst.exists() {
                     std::fs::hard_link(asset.clone(), &dst)
-                    .or_else(|_| std::fs::copy(asset.clone(), &dst).map(|_| ()))
-                    .unwrap();
+                        .or_else(|_| std::fs::copy(asset.clone(), &dst).map(|_| ()))
+                        .unwrap();
                 }
             }
 
