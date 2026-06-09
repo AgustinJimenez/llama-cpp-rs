@@ -864,6 +864,52 @@ impl LlamaModel {
         Ok(LlamaContext::new(self, context, params.embeddings()))
     }
 
+    /// Like [`new_context`] but catches Windows SEH exceptions (e.g. ACCESS VIOLATION from
+    /// hybrid KV cache allocation in new model architectures like QWEN35).
+    /// Returns `Err` with the SEH exception code if an SEH exception is caught.
+    pub fn new_context_safe<'a>(
+        &'a self,
+        backend: &LlamaBackend,
+        params: LlamaContextParams,
+    ) -> Result<LlamaContext<'a>, LlamaContextLoadError> {
+        extern "C" {
+            fn llama_init_from_model_safe(
+                model: *mut llama_cpp_sys_2::llama_model,
+                params: llama_cpp_sys_2::llama_context_params,
+                out_exception_code: *mut i32,
+            ) -> *mut llama_cpp_sys_2::llama_context;
+        }
+
+        let context_params = params.context_params;
+        let mut exception_code: i32 = 0;
+        let context = unsafe {
+            llama_init_from_model_safe(self.model.as_ptr(), context_params, &mut exception_code)
+        };
+        if context.is_null() {
+            if exception_code != 0 {
+                // Read the detailed error message (includes crash address on Windows)
+                extern "C" {
+                    fn llama_decode_safe_get_error() -> *const std::ffi::c_char;
+                }
+                let detail = unsafe {
+                    let ptr = llama_decode_safe_get_error();
+                    if ptr.is_null() {
+                        String::new()
+                    } else {
+                        std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                    }
+                };
+                eprintln!(
+                    "[llama_cpp_2] llama_init_from_model_safe caught SEH exception 0x{:08X}: {}",
+                    exception_code as u32, detail
+                );
+            }
+            return Err(LlamaContextLoadError::NullReturn);
+        }
+        let context = unsafe { NonNull::new_unchecked(context) };
+        Ok(LlamaContext::new(self, context, params.embeddings()))
+    }
+
     /// Apply the models chat template to some messages.
     /// See <https://github.com/ggerganov/llama.cpp/wiki/Templates-supported-by-llama_chat_apply_template>
     ///

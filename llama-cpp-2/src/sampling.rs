@@ -35,17 +35,21 @@ impl LlamaSampler {
             ) -> llama_cpp_sys_2::llama_token;
             fn llama_decode_safe_get_error() -> *const std::ffi::c_char;
         }
-        let token = unsafe {
-            llama_sampler_sample_safe(self.sampler, ctx.context.as_ptr(), idx)
-        };
+        let token = unsafe { llama_sampler_sample_safe(self.sampler, ctx.context.as_ptr(), idx) };
         // Check if the safe wrapper caught a C++ exception (token == -1 + error set)
         if token == -1 {
             let err = unsafe {
                 let ptr = llama_decode_safe_get_error();
                 if !ptr.is_null() {
                     let s = std::ffi::CStr::from_ptr(ptr).to_string_lossy();
-                    if !s.is_empty() { Some(s.to_string()) } else { None }
-                } else { None }
+                    if !s.is_empty() {
+                        Some(s.to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             };
             if let Some(msg) = err {
                 eprintln!("[SAMPLE] C++ exception caught in sample(): {}", msg);

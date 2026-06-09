@@ -83,7 +83,10 @@ impl<'model> LlamaContext<'model> {
         // Use safe wrapper that catches C++ exceptions (0xE06D7363 on MSVC).
         // Direct llama_decode can throw, which propagates through FFI and crashes.
         extern "C" {
-            fn llama_decode_safe(ctx: *mut llama_cpp_sys_2::llama_context, batch: llama_cpp_sys_2::llama_batch) -> i32;
+            fn llama_decode_safe(
+                ctx: *mut llama_cpp_sys_2::llama_context,
+                batch: llama_cpp_sys_2::llama_batch,
+            ) -> i32;
             fn llama_decode_safe_get_error() -> *const std::ffi::c_char;
         }
         let result = unsafe { llama_decode_safe(self.context.as_ptr(), batch.llama_batch) };
