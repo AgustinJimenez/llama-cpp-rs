@@ -1,3 +1,6 @@
+#![allow(clippy::all)]
+#![allow(missing_docs)]
+#![allow(missing_debug_implementations)]
 //! Bindings to the llama.cpp library.
 //!
 //! As llama.cpp is a very fast moving target, this crate does not attempt to create a stable API

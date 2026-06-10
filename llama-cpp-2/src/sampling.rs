@@ -338,7 +338,6 @@ impl LlamaSampler {
     /// Lazy grammar sampler, introduced in <https://github.com/ggerganov/llama.cpp/pull/9639>
     ///
     /// This sampler enforces grammar rules only when specific trigger words or tokens are encountered.
-    #[must_use]
     pub fn grammar_lazy(
         model: &LlamaModel,
         grammar_str: &str,
@@ -377,7 +376,6 @@ impl LlamaSampler {
     /// Trigger patterns are regular expressions matched from the start of the
     /// generation output. The grammar sampler will be fed content starting from
     /// the first match group.
-    #[must_use]
     pub fn grammar_lazy_patterns(
         model: &LlamaModel,
         grammar_str: &str,
