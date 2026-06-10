@@ -49,8 +49,12 @@ llama-cpp-sys-2 = { path = "../llama-cpp-sys-2", version = "0.1.147", features =
     "metal",
 ] }
 
-[lints]
-workspace = true
+[lints.rust]
+missing_docs = "allow"
+missing_debug_implementations = "allow"
+
+[lints.clippy]
+pedantic = "allow"
 
 [package.metadata.docs.rs]
 features = ["sampler"]
