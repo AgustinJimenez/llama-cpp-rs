@@ -1,6 +1,6 @@
 //! A safe wrapper around `llama_model_params`.
 
-#[cfg(feature = "__fit_params")]
+#[cfg(feature = "common")]
 use crate::context::params::LlamaContextParams;
 use crate::model::params::kv_overrides::KvOverrides;
 use crate::LlamaCppError;
@@ -12,7 +12,7 @@ use std::ptr::null;
 pub mod kv_overrides;
 
 /// Result of [`LlamaModelParams::fit_params`], containing the fitted context size.
-#[cfg(feature = "__fit_params")]
+#[cfg(feature = "common")]
 #[derive(Debug, Clone)]
 pub struct FitResult {
     /// The context size after fitting (may have been reduced from the requested value).
@@ -20,7 +20,7 @@ pub struct FitResult {
 }
 
 /// Error returned by [`LlamaModelParams::fit_params`].
-#[cfg(feature = "__fit_params")]
+#[cfg(feature = "common")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum FitError {
     /// Could not find allocations that are projected to fit available memory.
@@ -289,12 +289,16 @@ impl LlamaModelParams {
     }
 }
 
-// NOTE: fit_params requires llama_params_fit / LLAMA_PARAMS_FIT_STATUS_* symbols
-// which live in common/fit.h — not part of llama.h public API in newer llama.cpp.
-// Gated behind __fit_params feature until upstream stabilizes.
-#[cfg(feature = "__fit_params")]
+#[cfg(feature = "common")]
 impl LlamaModelParams {
     /// Automatically fit model parameters to available device memory.
+    ///
+    /// Wraps llama.cpp's `common_fit_params` (libcommon), which determines optimal `n_gpu_layers`,
+    /// `tensor_split`, and `tensor_buft_overrides` based on available VRAM. On success
+    /// the model and context params are updated in place.
+    ///
+    /// Only parameters that still hold their default value are modified — do not call
+    /// `with_n_gpu_layers` or `add_cpu_buft_override` before this.
     pub fn fit_params(
         mut self: Pin<&mut Self>,
         model_path: &CStr,
@@ -322,7 +326,7 @@ impl LlamaModelParams {
         self.params.tensor_buft_overrides = null();
 
         let status = unsafe {
-            llama_cpp_sys_2::llama_params_fit(
+            llama_cpp_sys_2::llama_rs_fit_params(
                 model_path.as_ptr(),
                 &raw mut self.params,
                 &raw mut cparams.context_params,
@@ -334,9 +338,10 @@ impl LlamaModelParams {
             )
         };
 
+        // llama_rs_fit_params returns common_params_fit_status: 0 = success, 1 = failure, 2 = error.
         match status {
-            llama_cpp_sys_2::LLAMA_PARAMS_FIT_STATUS_SUCCESS => {}
-            llama_cpp_sys_2::LLAMA_PARAMS_FIT_STATUS_FAILURE => return Err(FitError::Failure),
+            0 => {}
+            1 => return Err(FitError::Failure),
             _ => return Err(FitError::Error),
         }
 

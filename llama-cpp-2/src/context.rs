@@ -411,11 +411,9 @@ impl<'model> LlamaContext<'model> {
     }
 
     /// Print a breakdown of per-device memory use to the default logger.
-    /// NOTE: Requires llama_memory_breakdown_print in the public C API (common/fit.h).
-    /// Disabled when the symbol is not available (e.g. newer llama.cpp moves it out of llama.h).
-    #[cfg(feature = "__fit_params")]
+    #[cfg(feature = "common")]
     pub fn print_memory_breakdown(&self) {
-        unsafe { llama_cpp_sys_2::llama_memory_breakdown_print(self.context.as_ptr()) }
+        unsafe { llama_cpp_sys_2::llama_rs_memory_breakdown_print(self.context.as_ptr()) }
     }
 
     /// Clear the KV cache memory (reset all stored tokens).
