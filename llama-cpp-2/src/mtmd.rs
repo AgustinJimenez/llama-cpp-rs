@@ -475,7 +475,7 @@ impl MtmdBitmap {
     pub fn from_file(
         ctx: &MtmdContext,
         path: &str,
-        _placeholder: bool,
+        placeholder: bool,
     ) -> Result<Self, MtmdBitmapError> {
         let path_cstr = CString::new(path)?;
         // This helper now returns a wrapper struct (bitmap + an optional video
@@ -486,6 +486,7 @@ impl MtmdBitmap {
             llama_cpp_sys_2::mtmd_helper_bitmap_init_from_file(
                 ctx.context.as_ptr(),
                 path_cstr.as_ptr(),
+                placeholder,
             )
         };
 
@@ -521,7 +522,7 @@ impl MtmdBitmap {
     pub fn from_buffer(
         ctx: &MtmdContext,
         data: &[u8],
-        _placeholder: bool,
+        placeholder: bool,
     ) -> Result<Self, MtmdBitmapError> {
         // See the comment in `from_file`: this returns a wrapper struct now, and
         // `video_ctx` is always null since MTMD_VIDEO is not enabled in this build.
@@ -530,6 +531,7 @@ impl MtmdBitmap {
                 ctx.context.as_ptr(),
                 data.as_ptr(),
                 data.len(),
+                placeholder,
             )
         };
 
